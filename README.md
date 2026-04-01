@@ -78,17 +78,17 @@ AnalyzeCoverageUseCase    StartImprovementUseCase
 
 ## Domain Glossary
 
-| Term                    | Definition                                                                                                                                      |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| **Repository Slug**     | A GitHub repo identifier in `owner/repo` format (e.g. `microsoft/vscode`). Value Object.                                                        |
-| **Coverage File**       | A TypeScript source file tracked with its coverage metrics (lines, statements, functions, branches). Entity.                                    |
-| **Coverage Report**     | Snapshot of all tracked files for a repo at a given commit SHA. Aggregate Root.                                                                 |
-| **Coverage Percentage** | A value object wrapping a 0–100 number representing a coverage metric.                                                                          |
-| **Improvement Job**     | A background work unit that clones a repo, generates AI tests for a specific file, and opens a GitHub PR. Entity / Aggregate Root.              |
-| **Job Status**          | Value object representing the lifecycle stage of an `ImprovementJob`: `PENDING → CLONING → ANALYZING → GENERATING → SUBMITTING → COMPLETED      | FAILED`. |
-| **Coverage Threshold**  | The minimum acceptable line-coverage percentage (default 80%). Files below this are flagged.                                                    |
-| **AI Test Generator**   | Infrastructure port (implemented by `OpenAiTestGeneratorAdapter`) that receives source + coverage context and returns generated Jest test code. |
-| **Coverage Runner**     | Infrastructure port (implemented by `JestCoverageRunnerAdapter`) that clones a repo, runs `jest --coverage`, and parses results.                |
+| Term                    | Definition                                                                                                                                            |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Repository Slug**     | A GitHub repo identifier in `owner/repo` format (e.g. `microsoft/vscode`). Value Object.                                                              |
+| **Coverage File**       | A TypeScript source file tracked with its coverage metrics (lines, statements, functions, branches). Entity.                                          |
+| **Coverage Report**     | Snapshot of all tracked files for a repo at a given commit SHA. Aggregate Root.                                                                       |
+| **Coverage Percentage** | A value object wrapping a 0–100 number representing a coverage metric.                                                                                |
+| **Improvement Job**     | A background work unit that clones a repo, generates AI tests for a specific file, and opens a GitHub PR. Entity / Aggregate Root.                    |
+| **Job Status**          | Value object representing the lifecycle stage of an `ImprovementJob`: `PENDING → CLONING → ANALYZING → GENERATING → SUBMITTING → COMPLETED / FAILED`. |
+| **Coverage Threshold**  | The minimum acceptable line-coverage percentage (default 80%). Files below this are flagged.                                                          |
+| **AI Test Generator**   | Infrastructure port (implemented by `OpenAiTestGeneratorAdapter`) that receives source + coverage context and returns generated Jest test code.       |
+| **Coverage Runner**     | Infrastructure port (implemented by `JestCoverageRunnerAdapter`) that clones a repo, runs `jest --coverage`, and parses results.                      |
 
 ---
 
