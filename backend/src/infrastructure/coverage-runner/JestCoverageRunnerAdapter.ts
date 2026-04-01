@@ -47,12 +47,14 @@ export class JestCoverageRunnerAdapter implements ICoverageRunnerPort {
     const log = await repoGit.log(["-1"]);
     const commitSha = log.latest?.hash ?? "unknown";
 
-    this.logger.log(`Installing dependencies in ${workDir}`);
+    // Detect which subdirectory contains the Jest config (may be a subdirectory like backend/)
+    const jestWorkDir = this.findJestWorkDir(workDir);
+    this.logger.log(`Installing dependencies in ${jestWorkDir}`);
 
     try {
       this.runCommand(
         "npm install --no-audit --no-fund --prefer-offline",
-        workDir,
+        jestWorkDir,
         120_000,
       );
     } catch (e) {
@@ -61,7 +63,7 @@ export class JestCoverageRunnerAdapter implements ICoverageRunnerPort {
     }
 
     this.logger.log(`Running jest coverage for ${repositorySlug}`);
-    const coverageSummary = this.runJestCoverage(workDir);
+    const coverageSummary = this.runJestCoverage(workDir, jestWorkDir);
 
     const files = this.parseCoverageSummary(
       coverageSummary,
@@ -145,16 +147,72 @@ export class JestCoverageRunnerAdapter implements ICoverageRunnerPort {
     return execSync(command, options) as unknown as string;
   }
 
+  private findJestWorkDir(repoRoot: string): string {
+    const jestConfigs = [
+      "jest.config.js",
+      "jest.config.ts",
+      "jest.config.mjs",
+      "jest.config.cjs",
+      "jest.config.json",
+    ];
+
+    const hasJestConfig = (dir: string): boolean => {
+      const pkgPath = path.join(dir, "package.json");
+      if (fs.existsSync(pkgPath)) {
+        try {
+          const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8")) as Record<
+            string,
+            unknown
+          >;
+          if (
+            pkg.jest ||
+            (typeof (pkg.scripts as Record<string, string>)?.test ===
+              "string" &&
+              (pkg.scripts as Record<string, string>).test.includes("jest"))
+          ) {
+            return true;
+          }
+        } catch {
+          // ignore parse errors
+        }
+      }
+      return jestConfigs.some((cfg) => fs.existsSync(path.join(dir, cfg)));
+    };
+
+    if (hasJestConfig(repoRoot)) return repoRoot;
+
+    // Search one level deep for a subdirectory with Jest config
+    try {
+      const entries = fs.readdirSync(repoRoot, { withFileTypes: true });
+      for (const entry of entries) {
+        if (
+          !entry.isDirectory() ||
+          entry.name.startsWith(".") ||
+          entry.name === "node_modules"
+        )
+          continue;
+        const subDir = path.join(repoRoot, entry.name);
+        if (hasJestConfig(subDir)) return subDir;
+      }
+    } catch {
+      // ignore read errors
+    }
+
+    return repoRoot;
+  }
+
   private runJestCoverage(
-    workDir: string,
+    repoRoot: string,
+    jestWorkDir: string,
   ): Record<string, CoverageSummaryEntry> {
-    const coverageDir = path.join(workDir, "coverage");
+    // Always write coverage to a known location under the repo root
+    const coverageDir = path.join(repoRoot, "coverage");
     const summaryPath = path.join(coverageDir, "coverage-summary.json");
 
     try {
       this.runCommand(
-        "npx jest --coverage --coverageReporters=json-summary --coverageReporters=json --passWithNoTests --forceExit",
-        workDir,
+        `npx jest --coverage --coverageReporters=json-summary --coverageReporters=json --passWithNoTests --forceExit --coverageDirectory="${coverageDir}"`,
+        jestWorkDir,
         300_000,
       );
     } catch (err: unknown) {
