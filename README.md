@@ -1,6 +1,6 @@
 # TS Coverage Improver
 
-A NestJS service that automatically improves TypeScript test coverage in GitHub repositories by generating `*.test.ts` files via OpenAI and submitting them as pull requests.
+A NestJS service that automatically improves TypeScript test coverage in GitHub repositories by generating `*.test.ts` files via Groq and submitting them as pull requests.
 
 ---
 
@@ -29,7 +29,7 @@ The backend follows **Domain-Driven Design (DDD)** with four layers:
 ├──────────────────────────────────────────────────────────────┤
 │  Domain Layer        (Entities, Value Objects, Repo ifaces)    │
 ├──────────────────────────────────────────────────────────────┤
-│  Infrastructure Layer (TypeORM/SQLite, Octokit, OpenAI, Git)  │
+│  Infrastructure Layer (TypeORM/SQLite, Octokit, Groq, Git)  │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -39,7 +39,7 @@ The backend follows **Domain-Driven Design (DDD)** with four layers:
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
 | **Domain**         | `CoverageFile`, `CoverageReport`, `ImprovementJob`, value objects, repository interfaces                                                               | None                                     |
 | **Application**    | `AnalyzeCoverageUseCase`, `StartImprovementUseCase`, `GetImprovementJobUseCase`, port interfaces                                                       | NestJS `@Injectable` only                |
-| **Infrastructure** | TypeORM entities, SQLite repositories, `GitHubAdapter` (Octokit), `OpenAiTestGeneratorAdapter`, `JestCoverageRunnerAdapter`, `ImprovementJobProcessor` | TypeORM, Octokit, OpenAI SDK, simple-git |
+| **Infrastructure** | TypeORM entities, SQLite repositories, `GitHubAdapter` (Octokit), `GroqTestGeneratorAdapter`, `JestCoverageRunnerAdapter`, `ImprovementJobProcessor` | TypeORM, Octokit, Groq SDK, simple-git |
 | **Presentation**   | NestJS controllers, `AppModule`                                                                                                                        | NestJS, class-validator                  |
 
 ### Component Diagram
@@ -63,13 +63,13 @@ AnalyzeCoverageUseCase    StartImprovementUseCase
                 │
      ┌──────────▼──────────────────────────────┐
      │        Infrastructure                    │
-     │  SQLite  │  GitHub  │  OpenAI  │  Git    │
+     │  SQLite  │  GitHub  │  Groq  │  Git    │
      └──────────────────────────────────────────┘
                 │
      ImprovementJobProcessor  (cron every 10s)
          1. Clone repo
          2. Run jest --coverage
-         3. Call OpenAI for test generation
+         3. Call Groq for test generation
          4. Git push new branch
          5. Create GitHub PR
 ```
@@ -78,17 +78,17 @@ AnalyzeCoverageUseCase    StartImprovementUseCase
 
 ## Domain Glossary
 
-| Term                    | Definition                                                                                                                                      |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| **Repository Slug**     | A GitHub repo identifier in `owner/repo` format (e.g. `microsoft/vscode`). Value Object.                                                        |
-| **Coverage File**       | A TypeScript source file tracked with its coverage metrics (lines, statements, functions, branches). Entity.                                    |
-| **Coverage Report**     | Snapshot of all tracked files for a repo at a given commit SHA. Aggregate Root.                                                                 |
-| **Coverage Percentage** | A value object wrapping a 0–100 number representing a coverage metric.                                                                          |
-| **Improvement Job**     | A background work unit that clones a repo, generates AI tests for a specific file, and opens a GitHub PR. Entity / Aggregate Root.              |
-| **Job Status**          | Value object representing the lifecycle stage of an `ImprovementJob`: `PENDING → CLONING → ANALYZING → GENERATING → SUBMITTING → COMPLETED      | FAILED`. |
-| **Coverage Threshold**  | The minimum acceptable line-coverage percentage (default 80%). Files below this are flagged.                                                    |
-| **AI Test Generator**   | Infrastructure port (implemented by `OpenAiTestGeneratorAdapter`) that receives source + coverage context and returns generated Jest test code. |
-| **Coverage Runner**     | Infrastructure port (implemented by `JestCoverageRunnerAdapter`) that clones a repo, runs `jest --coverage`, and parses results.                |
+| Term                    | Definition                                                                                                                                            |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Repository Slug**     | A GitHub repo identifier in `owner/repo` format (e.g. `microsoft/vscode`). Value Object.                                                              |
+| **Coverage File**       | A TypeScript source file tracked with its coverage metrics (lines, statements, functions, branches). Entity.                                          |
+| **Coverage Report**     | Snapshot of all tracked files for a repo at a given commit SHA. Aggregate Root.                                                                       |
+| **Coverage Percentage** | A value object wrapping a 0–100 number representing a coverage metric.                                                                                |
+| **Improvement Job**     | A background work unit that clones a repo, generates AI tests for a specific file, and opens a GitHub PR. Entity / Aggregate Root.                    |
+| **Job Status**          | Value object representing the lifecycle stage of an `ImprovementJob`: `PENDING → CLONING → ANALYZING → GENERATING → SUBMITTING → COMPLETED / FAILED`. |
+| **Coverage Threshold**  | The minimum acceptable line-coverage percentage (default 80%). Files below this are flagged.                                                          |
+| **AI Test Generator**   | Infrastructure port (implemented by `GroqTestGeneratorAdapter`) that receives source + coverage context and returns generated Jest test code.       |
+| **Coverage Runner**     | Infrastructure port (implemented by `JestCoverageRunnerAdapter`) that clones a repo, runs `jest --coverage`, and parses results.                      |
 
 ---
 
@@ -99,7 +99,7 @@ AnalyzeCoverageUseCase    StartImprovementUseCase
 | **Node.js ≥ 20**                 | `node --version`                                                                                            |
 | **npm ≥ 10**                     | Bundled with Node 20                                                                                        |
 | **GitHub Personal Access Token** | Needs `repo` scope (full read/write). [Create one here](https://github.com/settings/tokens/new?scopes=repo) |
-| **OpenAI API Key**               | [Get one here](https://platform.openai.com/api-keys)                                                        |
+| **Groq API Key**               | [Get one here](https://console.groq.com/keys)                                                        |
 | **Git**                          | Available on `$PATH`                                                                                        |
 
 The target GitHub repository must:
@@ -129,7 +129,7 @@ Minimum required values in `backend/.env`:
 
 ```env
 GITHUB_TOKEN=ghp_your_token_here
-OPENAI_API_KEY=sk-your_key_here
+GROQ_API_KEY=sk-your_key_here
 ```
 
 ### 2. Install backend dependencies
@@ -283,7 +283,7 @@ cd frontend && npm run build
    - Picks up `PENDING` jobs (one per repo at a time to avoid conflicts)
    - **CLONING**: Clones repo fresh to a new temp directory
    - **ANALYZING**: Re-runs jest coverage; extracts uncovered lines & function names from `coverage-final.json`
-   - **GENERATING**: Calls OpenAI API with the source file, existing tests, and uncovered lines → receives generated test code
+   - **GENERATING**: Calls Groq API with the source file, existing tests, and uncovered lines → receives generated test code
    - **SUBMITTING**:
      - Writes the generated `.test.ts` file to the working directory
      - Creates a new git branch `coverage-improvement/{filename}-{timestamp}`
@@ -303,4 +303,4 @@ cd frontend && npm run build
 - Coverage analysis clones the repo each time (no caching between analysis runs)
 - AI-generated tests are a **starting point** — they should be reviewed before merging
 - Only one improvement job per repository runs at a time (serialized with an in-memory lock)
-- The OpenAI model's context window limits test generation for very large files; files >4000 lines may be truncated
+- The Groq model's context window limits test generation for very large files; files >4000 lines may be truncated
